@@ -1,8 +1,10 @@
 (ns de.karolski.sanity.core
   (:refer-clojure :exclude [reify == inc])
   (use [clojure.pprint :only (cl-format)]
-       (clojure.core.logic [prelude :only (matche)]
-                           minikanren)))
+       [clojure.contrib.macro-utils :only (macrolet)]
+       (clojure.contrib [logging :only (warn)])))
+
+(def fstr (partial cl-format nil))
 
 (def ^:private str-map
      {:test-failed "Test failed: ~A\n for ~A = ~A"
@@ -18,7 +20,7 @@
   `(let [result# ~test]
      (when (not result#)
        (throw (Exception.
-               (cl-format nil ~msg (quote ~test) (quote ~val) ~val))))))
+               (fstr ~msg (quote ~test) (quote ~val) ~val))))))
 
 (defmacro assert-with-msg-on-pred
   "Evaluate (pred val). If that returns nil/false, throw an Exception
@@ -31,7 +33,7 @@
   `(let [result# ~(pred val)]
      (when (not result#)
        (throw (Exception.
-               (cl-format nil ~msg (:name (meta (resolve (quote ~pred)))) (quote ~val) ~val))))))
+               (fstr ~msg (:name (meta (resolve (quote ~pred)))) (quote ~val) ~val))))))
 
 (defmacro assert* [val test]
   `(assert-with-msg ~val ~test (failure-msg :test-failed)))
@@ -250,14 +252,105 @@
         (and (= (ns-of method-fn) ns) (re-matches regex (name sym))))
       (methods deduce-argument-type-from-symbol-on-ns)))))
 
-(defrecord Ship [])
-(defmethod deduce-argument-type-from-symbol-on-ns #"ship" [_ _]
-  Ship)
+;; (defmethod deduce-argument-type-from-symbol-on-ns #"ship" [_ _]
+;;   Ship)
 
-(defmethod deduce-argument-type-from-symbol-on-ns #"image-count" [_ _]
-  Long)
+;; (defmethod deduce-argument-type-from-symbol-on-ns #"image-count" [_ _]
+;;   Long)
 
-(use '[clojure.contrib.macro-utils :only (macrolet)])
+(defn- check-arglist-for-with-pluggable
+  "Various checks on the arguments to the macro WITH-PLUGGABLE."
+  [name plugin-vec]
+  ;; ensure the user has specified a symbol for name
+  (if (not (symbol? name))
+    (throw (Exception. (fstr "WITH-PLUGGABLE expects a SYMBOL
+    as its first argument, but got `~S` of type ~A instead."
+    name (type name)))))
+  
+  ;; ensure plugin-list is a vector
+  (if (not (vector? plugin-vec))
+    (throw (Exception. (fstr "WITH-PLUGGABLE expects a VECTOR
+    as its second argument, but got `~S` of type ~A instead."
+    plugin-vec (type plugin-vec)))))
+  
+  ;; ensure the symbol named by NAME is not being used as a function inside plugin-list
+  (if-let [code (some
+                 #(cond (= name %) %
+                        (and (seq? %) (= name (first %))) %)
+                 plugin-vec)]
+    (throw (Exception. (fstr "Within WITH-PLUGGABLE's second
+  argument: PLUGIN-LIST, you may not use the symbol which is named by
+  the first argument: NAME. You have used NAME:=~S inside `~S`
+  however." name code)))) )
+
+(defn pluggable-macro-body [args plugin-vec]
+  ;; the last element inside the plugin-vec is a symbol
+  ``(~'~(last plugin-vec)
+     ;; any elements before that within the
+     ;; plugin-vec are being reduced by applying
+     ;; them in-order on the argument list of the
+     ;; new macro. This way they can transform the
+     ;; arguments however they want.
+     ~@(clojure.core/reduce
+        (clojure.core/fn
+         internal-with-pluggable-fn
+         [a# [index# f#]]
+         ;; first transform all args according to plugin
+         (let [transformed-data#
+               (try
+                 (clojure.core/apply f# a#)
+                 (catch IllegalArgumentException e#
+                   ;; f# must have not enough arguments
+                   (throw
+                    (IllegalArgumentException.
+                     (cl-format
+                      nil
+                      "Plugin #~d to WITH-PLUGGABLE got
+                                  an invalid number of
+                                  arguments. Either the plugin, or the
+                                  call to the pluggable `~S` has to be
+                                  fixed."
+                      index# '~name)
+                     e#))))]
+           ;; now check whether the plugin did everything the right way
+           (cond
+            (not (vector? transformed-data#))
+            (throw
+             (Exception.
+              (fstr "Plugin #~d of pluggable `~S` did not return a vector."
+                    index# '~name)))
+            (not (clojure.core/== (count transformed-data#) (count a#)))
+            (throw
+             (Exception.
+              (fstr
+               "Plugin #~d of pluggable `~S` returned a
+                           vector with ~d instead of ~d elements."
+               index# '~name (count transformed-data#) (count a#))))
+            ;; for easier debugging, plugins should
+            ;; preserve types - but this does not always
+            ;; have to be the case, so we only warn on it
+            (not (clojure.core/=
+                  (clojure.core/map-indexed
+                   (clojure.core/fn [i# e#] [i# (clojure.core/type e#)]) a#)
+                  (clojure.core/map-indexed
+                   (clojure.core/fn [i# e#] [i# (clojure.core/type e#)]) transformed-data#)))
+            (do
+              (warn
+               (fstr
+                "In ns ~S: Plugin #~d of pluggable `~S` returned a
+                           vector with differing types. It should be ~S, but got ~S instead."
+                (ns-name *ns*) index# '~name (map type a#) (map type transformed-data#)))
+              transformed-data#)
+            :else transformed-data#)
+           ))
+        ~args
+        ~(clojure.core/vec
+          ;; index the elements, so we can use indices as
+          ;; hints inside error messages
+          (map-indexed (comp vec list)
+                       (clojure.core/butlast
+                        plugin-vec))))))
+
 (defmacro with-pluggable
   "Macro which defines a new macro within its body with the specified
   NAME. The second argument is a vector of N elements, where the first
@@ -267,6 +360,10 @@
   arguments as the base macro. They may change the arguments in any
   way, but must return a list of the (possibly transformed) arguments
   when they're done.
+
+  Note that the plugins may not capture the local context (no closures
+  per (fn ...) directly inside PLUGIN-VEC). They may however be
+  globally defined closures (i.e. closures per (defn ...)).
 
   Example:
   (with-pluggable 
@@ -291,19 +388,24 @@
 
   ;; Try it!
   (my-identity 1)"
-  [name plugin-list & body]
+  [name plugin-vec & body]
+  (check-arglist-for-with-pluggable name plugin-vec)
   (let [args (gensym "args")]
-    `(macrolet [(~name [& ~args]       ;;
-                       ;; the last element inside the plugin-list is a symbol
-                       `(~'~(last plugin-list)
-                         ;; any elements before that within the
-                         ;; plugin-list are being reduced by applying
-                         ;; them in-order on the argument list of the
-                         ;; new macro. This way they can transform the
-                         ;; arguments however they want.
-                          ~@(reduce (fn [a# f#] (apply f# a#))
-                                    ~args ~(vec (butlast plugin-list)))))]
+    `(macrolet
+       [(~name [& ~args]
+               ~(pluggable-macro-body args plugin-vec))]
        ~@body)))
+
+(defmacro defpluggable
+  "Like WITH-PLUGGABLE, but on a namespace scale by defining a new
+  macro through DEFMACRO (instead of MACROLET)."
+  [name plugin-vec]
+  (check-arglist-for-with-pluggable name plugin-vec)
+  (let [args (gensym "args")]
+    `(defmacro
+       ~name
+       [& ~args]
+       ~(pluggable-macro-body args plugin-vec))))
 
 (defn argument-type-deducer-plugin
   "Plugin for with-pluggable. Returns a function which transforms the
