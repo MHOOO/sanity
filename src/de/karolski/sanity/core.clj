@@ -2,7 +2,8 @@
   (:refer-clojure :exclude [reify == inc])
   (use [clojure.pprint :only (cl-format)]
        [clojure.contrib.macro-utils :only (macrolet)]
-       (clojure.contrib [logging :only (warn)])))
+       (clojure.contrib [logging :only (warn)]
+                        [seq-utils :only (positions)])))
 
 (def fstr (partial cl-format nil))
 
@@ -258,7 +259,7 @@
 ;; (defmethod deduce-argument-type-from-symbol-on-ns #"image-count" [_ _]
 ;;   Long)
 
-(defn- check-arglist-for-with-pluggable
+(defn- check-arglist-for-pluggable
   "Various checks on the arguments to the macro WITH-PLUGGABLE."
   [name plugin-vec]
   ;; ensure the user has specified a symbol for name
@@ -283,73 +284,85 @@
   the first argument: NAME. You have used NAME:=~S inside `~S`
   however." name code)))) )
 
-(defn pluggable-macro-body [args plugin-vec]
+(defn pluggable-macro-body [name args plugin-vec]
   ;; the last element inside the plugin-vec is a symbol
-  ``(~'~(last plugin-vec)
-     ;; any elements before that within the
-     ;; plugin-vec are being reduced by applying
-     ;; them in-order on the argument list of the
-     ;; new macro. This way they can transform the
-     ;; arguments however they want.
-     ~@(clojure.core/reduce
-        (clojure.core/fn
-         internal-with-pluggable-fn
-         [a# [index# f#]]
-         ;; first transform all args according to plugin
-         (let [transformed-data#
-               (try
-                 (clojure.core/apply f# a#)
-                 (catch IllegalArgumentException e#
-                   ;; f# must have not enough arguments
-                   (throw
-                    (IllegalArgumentException.
-                     (cl-format
-                      nil
-                      "Plugin #~d to WITH-PLUGGABLE got
-                                  an invalid number of
-                                  arguments. Either the plugin, or the
-                                  call to the pluggable `~S` has to be
-                                  fixed."
-                      index# '~name)
-                     e#))))]
-           ;; now check whether the plugin did everything the right way
-           (cond
-            (not (vector? transformed-data#))
-            (throw
-             (Exception.
-              (fstr "Plugin #~d of pluggable `~S` did not return a vector."
-                    index# '~name)))
-            (not (clojure.core/== (count transformed-data#) (count a#)))
-            (throw
-             (Exception.
-              (fstr
-               "Plugin #~d of pluggable `~S` returned a
-                           vector with ~d instead of ~d elements."
-               index# '~name (count transformed-data#) (count a#))))
-            ;; for easier debugging, plugins should
-            ;; preserve types - but this does not always
-            ;; have to be the case, so we only warn on it
-            (not (clojure.core/=
-                  (clojure.core/map-indexed
-                   (clojure.core/fn [i# e#] [i# (clojure.core/type e#)]) a#)
-                  (clojure.core/map-indexed
-                   (clojure.core/fn [i# e#] [i# (clojure.core/type e#)]) transformed-data#)))
-            (do
-              (warn
-               (fstr
-                "In ns ~S: Plugin #~d of pluggable `~S` returned a
+  (let [placer (gensym "placer")]
+    ``(do
+        ~(def ~placer true)
+        (~'~(last plugin-vec)
+         ;; any elements before that within the
+         ;; plugin-vec are being reduced by applying
+         ;; them in-order on the argument list of the
+         ;; new macro. This way they can transform the
+         ;; arguments however they want.
+         ~@(clojure.core/reduce
+            (clojure.core/fn
+             internal-with-pluggable-fn
+             [a# [index# f#]]
+             ;; first transform all args according to plugin
+             (let [transformed-data#
+                   (try
+                     (clojure.core/apply f# a#)
+                     (catch IllegalArgumentException e#
+                       ;; f# must have not enough arguments
+                       (-> (cl-format
+                            nil
+                            "Error at ~A:~A
+Plugin #~d to PLUGGABLE `~S` got an invalid number of arguments.
+Passed arguments were: '~S.
+Either the plugin, or the call to the pluggable has to be fixed."
+                            ~(if placer
+                               `(if #'~placer
+                                  (:file (meta #'~placer))
+                                  "unknown")
+                               `"unknown")
+                            ~(if placer
+                               `(if #'~placer
+                                  (:line (meta #'~placer))
+                                  "unknown")
+                               `"unknown")
+                            index# '~name (vec a#))
+                           (IllegalArgumentException. e#)
+                           (throw))))]
+               ;; now check whether the plugin did everything the right way
+               (cond
+                (not (vector? transformed-data#))
+                (throw
+                 (Exception.
+                  (fstr "Plugin #~d of pluggable `~S` did not return a vector."
+                        index# '~name)))
+                (not (clojure.core/== (count transformed-data#) (count a#)))
+                (do (warn
+                     (fstr
+                      "Plugin #~d of pluggable `~S` returned a vector with ~d instead of ~d elements.
+Before: ~S
+After: ~S"
+                      index# '~name (count transformed-data#) (count a#) a# transformed-data#))
+                    transformed-data#)
+                ;; for easier debugging, plugins should
+                ;; preserve types - but this does not always
+                ;; have to be the case, so we only warn on it
+                (not (clojure.core/=
+                      (clojure.core/map-indexed
+                       (clojure.core/fn [i# e#] [i# (clojure.core/type e#)]) a#)
+                      (clojure.core/map-indexed
+                       (clojure.core/fn [i# e#] [i# (clojure.core/type e#)]) transformed-data#)))
+                (do
+                  (warn
+                   (fstr
+                    "In ns ~S: Plugin #~d of pluggable `~S` returned a
                            vector with differing types. It should be ~S, but got ~S instead."
-                (ns-name *ns*) index# '~name (map type a#) (map type transformed-data#)))
-              transformed-data#)
-            :else transformed-data#)
-           ))
-        ~args
-        ~(clojure.core/vec
-          ;; index the elements, so we can use indices as
-          ;; hints inside error messages
-          (map-indexed (comp vec list)
-                       (clojure.core/butlast
-                        plugin-vec))))))
+                    (ns-name *ns*) index# '~name (map type a#) (map type transformed-data#)))
+                  transformed-data#)
+                :else transformed-data#)
+               ))
+            ~args
+            ~(clojure.core/vec
+              ;; index the elements, so we can use indices as
+              ;; hints inside error messages
+              (map-indexed (comp vec list)
+                           (clojure.core/butlast
+                            plugin-vec))))))))
 
 (defmacro with-pluggable
   "Macro which defines a new macro within its body with the specified
@@ -389,23 +402,53 @@
   ;; Try it!
   (my-identity 1)"
   [name plugin-vec & body]
-  (check-arglist-for-with-pluggable name plugin-vec)
+  (check-arglist-for-pluggable name plugin-vec)
   (let [args (gensym "args")]
     `(macrolet
        [(~name [& ~args]
-               ~(pluggable-macro-body args plugin-vec))]
+               ~(pluggable-macro-body name args plugin-vec))]
        ~@body)))
 
 (defmacro defpluggable
   "Like WITH-PLUGGABLE, but on a namespace scale by defining a new
   macro through DEFMACRO (instead of MACROLET)."
   [name plugin-vec]
-  (check-arglist-for-with-pluggable name plugin-vec)
-  (let [args (gensym "args")]
-    `(defmacro
-       ~name
-       [& ~args]
-       ~(pluggable-macro-body args plugin-vec))))
+  (check-arglist-for-pluggable name plugin-vec)
+  (let [args (gensym "args")
+        placer (gensym "placer")]
+    `(do
+       ;; (def ~placer true)
+       (defmacro
+         ~name
+         [& ~args]
+         ~(pluggable-macro-body name args plugin-vec ;; :placer placer
+                                )))))
+
+(defn- add-metadata-on-arglist-using-deduction-map [arglist deduce-map]
+  (-> (fn [sym]
+        (if-let [deduced-type
+                 (some
+                  (fn [[regex t]] 
+                    (if (re-matches regex (str sym))
+                      t))
+                  deduce-map)]
+          (vary-meta
+           sym
+           (fn [m] (merge m {:type deduced-type})))
+          sym))
+      (map arglist)
+      (vec)))
+
+(defn validate-arg-type-from-meta
+  "Given a symbol SYM containing :type metadata and a value ARG, check
+  whether ARG is an instance of (:type (meta SYM)). If not, throw an
+  IllegalArgumentException."
+  [sym arg]
+  (if (not (and (not (nil? arg))
+                (instance? (:type (meta sym)) arg)))
+    (throw
+     (IllegalArgumentException.
+      (fstr "Expected argument `~A` to be of type `~S` but got type `~S` instead." sym (:type (meta sym)) (type arg))))))
 
 (defn argument-type-deducer-plugin
   "Plugin for with-pluggable. Returns a function which transforms the
@@ -419,34 +462,30 @@
   T_n}, n \\in [0,inf]. With R_i being regular expressions and T_i any
   type/class for i \\in [0,n]. "
   [& {:keys [deduce-map]}]
-  (fn [name arglist body]
-    (let [arglist (-> (fn [sym]
-                        (if-let [deduced-type
-                                 (some
-                                  (fn [[regex t]] 
-                                    (if (re-matches regex (str sym))
-                                      t))
-                                  deduce-map)]
-                          (vary-meta
-                           sym
-                           (fn [m] (merge m {:type deduced-type})))
-                          sym))
-                      (map arglist)
-                      (vec))]
-      [name arglist body])))
+  (fn argument-type-deducer-fn
+    [& args]
+    (if-let [arglist (first (filter vector? args))]
+      (vec (replace {arglist (add-metadata-on-arglist-using-deduction-map arglist deduce-map)}
+                    args))
+      ;; TODO: arity dispatch
+      (vec args))))
 
 (defn argument-type-assertion-plugin
   "Return a function which takes three arguments (NAME, ARGLIST &
   BODY) just like a DEFN form (without docstring) and adds assertions
   for any type hinted symbol argument to the BODY argument."
   []
-  (fn [name arglist body]
-    (let [assertable-args (filter #(:type (meta %)) arglist)
-          assertion-body
-          (map #(do `(assert
-                      (and (not (nil? ~%))
-                           (instance? ~(:type (meta %)) ~%))))
-               assertable-args)] 
-      [name arglist `(do
-                       ~@assertion-body
-                       ~body)])))
+  (fn argument-type-assertion-fn 
+    ([& args]
+       (if-let [arglist (first (filter vector? args))]
+         (let [arglist-position (first (positions #{arglist} args))
+               prepost-conditions? (map? (nth args (+ 1 arglist-position)))
+               first-body-position (+ arglist-position (if prepost-conditions? 2 1))
+               assertable-args (filter #(:type (meta %)) arglist)
+               assertion-body
+               (map (fn argument-type-assertion-builder-fn [arg]
+                      `(validate-arg-type-from-meta '~arg ~arg))
+                    assertable-args)]
+           (vec (concat (take first-body-position args) (concat assertion-body (drop first-body-position args)))))
+         ;; TODO: arity dispatch
+         (vec args)))))

@@ -1,0 +1,18 @@
+* TODO Add matchure plugin
+* TODO Add multi arity dispatch
+* TODO Test whether type hints on keywords work
+** If so, also add type hints on keywords inside argument-type-deduction-plugin
+* TODO Add plugin overriding possibilities to any pluggable
+  Proposed syntax:
+  #+begin_src clojure
+    (pluggable (+matchure +(deduction {#"entity" Entity}))
+               ... other args)
+    
+    ;; Example
+    (defn (+matchure +(deduction {#"entity" Entity}) +assertion)
+      entity
+      ([(and ?entity (entity? ?))] (do-stuff-on-entity)))
+  #+end_src
+** TODO The above requires mappings from shorthands to their appropriate fns
+   (matchure, deduction, assertion) ->
+   (matchure-plugin, argument-type-deduction-plugin, argument-type-assertion-plugin)
