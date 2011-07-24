@@ -1,0 +1,43 @@
+* Introduction
+  Sanity is a *clojure library* which uses plug-in based macros to...
+  1. deduce argument types based on argument names
+  2. add type hints & assertions based on the former
+
+  Furthermore, the plug-in system can be used to enhance any macro you
+  like in various ways.
+  
+* Installation
+  Once you have cloned the library, you may use /leiningen/'s =lein
+  install= command to install the library into your local maven
+  repo. After that you can use it inside your own projects by
+  specifying =[de.karolski.sanity "0.1.0-SNAPSHOT"]= as a dependency.
+
+* Usage
+  Simple example defining a custom =defn=:
+  #+begin_src clojure
+(defpluggable
+  defn
+  [(argument-type-deducer-plugin :deduce-map {;; Entity may yet be one of the *old* entities
+                                              ;; #"entity" jMonkeyEngine.entity.Entity
+                                              #"i" Long
+                                              #".*-fn" clojure.lang.AFunction
+                                              #".*text" String
+                                              })
+   (argument-type-assertion-plugin)
+   clojure.core/defn])
+  #+end_src
+  Once you have that defined (make sure you =(:refer-clojure :exclude
+  [defn])= inside the namespace), you can use it like a normal =defn=
+  form. However, any argument which matches the regular expressions as
+  specified inside the =:deduce-map= keyword argument to the
+  =argument-type-deducer-plugin= will be type hinted and checked upon
+  function entry.
+  
+* Future
+  see this projects TODO.org
+  
+* License
+
+  Copyright (C) 2011 FIXME
+
+  Distributed under the Eclipse Public License, the same as Clojure.
