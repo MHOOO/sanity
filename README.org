@@ -14,7 +14,7 @@
 
 * Usage
   Simple example defining a custom =defn=:
-  #+begin_src clojure
+  #+BEGIN_EXAMPLE
 (defpluggable
   defn
   [(argument-type-deducer-plugin :deduce-map {;; Entity may yet be one of the *old* entities
@@ -25,7 +25,7 @@
                                               })
    (argument-type-assertion-plugin)
    clojure.core/defn])
-  #+end_src
+  #+END_EXAMPLE
   Once you have that defined (make sure you =(:refer-clojure :exclude
   [defn])= inside the namespace), you can use it like a normal =defn=
   form. However, any argument which matches the regular expressions as
