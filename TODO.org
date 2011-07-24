@@ -12,7 +12,8 @@
     (defn (+matchure +(deduction {#"entity" Entity}) +assertion)
       entity
       ([(and ?entity (entity? ?))] (do-stuff-on-entity)))
-  #+BEGIN_SRC
+  #+END_SRC
+  
   - The above requires mappings from shorthands to their appropriate fns
     (matchure, deduction, assertion) ->
     (matchure-plugin, argument-type-deduction-plugin, argument-type-assertion-plugin)
