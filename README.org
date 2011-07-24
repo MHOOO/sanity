@@ -14,18 +14,16 @@
 
 * Usage
   Simple example defining a custom =defn=:
-  #+BEGIN_EXAMPLE
+  #+BEGIN_SRC clojure
 (defpluggable
   defn
-  [(argument-type-deducer-plugin :deduce-map {;; Entity may yet be one of the *old* entities
-                                              ;; #"entity" jMonkeyEngine.entity.Entity
-                                              #"i" Long
+  [(argument-type-deducer-plugin :deduce-map {#"i" Long
                                               #".*-fn" clojure.lang.AFunction
                                               #".*text" String
                                               })
    (argument-type-assertion-plugin)
    clojure.core/defn])
-  #+END_EXAMPLE
+  #+END_SRC
   Once you have that defined (make sure you =(:refer-clojure :exclude
   [defn])= inside the namespace), you can use it like a normal =defn=
   form. However, any argument which matches the regular expressions as
