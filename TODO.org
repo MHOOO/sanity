@@ -1,10 +1,11 @@
-- Add matchure plugin
-- Add multi arity dispatch
-- Test whether type hints on keywords work
-  - If so, also add type hints on keywords inside argument-type-deduction-plugin
-- Add plugin overriding possibilities to any pluggable
-  Proposed syntax:
-  #+BEGIN_SRC clojure
+* Implement [1/6]
+  - [X] Add multi arity dispatch
+  - [ ] Test whether type hints on keywords work
+  - [ ] If so, also add type hints on keywords inside argument-type-deduction-plugin
+  - [ ] Maybe add matchure plugin
+  - [ ] Add plugin overriding possibilities to any pluggable.
+    Proposed syntax:
+    #+BEGIN_SRC clojure
     (pluggable (+matchure +(deduction {#"entity" Entity}))
                ... other args)
     
@@ -12,8 +13,8 @@
     (defn (+matchure +(deduction {#"entity" Entity}) +assertion)
       entity
       ([(and ?entity (entity? ?))] (do-stuff-on-entity)))
-  #+END_SRC
+    #+END_SRC
   
-  - The above requires mappings from shorthands to their appropriate fns
+  - [ ] The above requires mappings from shorthands to their appropriate fns
     (matchure, deduction, assertion) ->
     (matchure-plugin, argument-type-deduction-plugin, argument-type-assertion-plugin)
