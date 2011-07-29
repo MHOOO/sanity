@@ -131,12 +131,23 @@
                   (fn+ [a x b arg-count] nil)) 1 2 3 4)
                 (list nil {:type java.lang.Long} nil {:type java.lang.Long}))))
 
-  (it "Should not change anything on multi arity dispatch."
-    (expect (= ((with-pluggable fn+
-                  [(argument-type-deducer-plugin) 
-                   clojure.core/fn]
-                  (fn+ ([x] nil) ([x y] nil))) 1))))
+  (testing "Multi Arity"
+   (it "Should not change anything on multi arity dispatch."
+     (expect (= ((with-pluggable fn+
+                   [(argument-type-deducer-plugin) 
+                    clojure.core/fn]
+                   (fn+ ([x] nil) ([x y] nil))) 1))))
+   (it "Should deduce deduce type correctly on matched arguments and leave non-matched arguments alone within multi arity dispatch."
+     (expect (= ((with-pluggable fn+
+                   [(argument-type-deducer-plugin :deduce-map {#"x" Long #".*-count" Long})
+                    (fn [[arglist body]] 
+                      [arglist `(list ~@(map meta arglist))])
+                    clojure.core/fn]
+                   (fn+ ([a x b arg-count] nil))) 1 2 3 4)
+                (list nil {:type java.lang.Long} nil {:type java.lang.Long})))))
   )
+
+
 
 (describe argument-type-assertion-plugin
   (it "Should not change anything"
@@ -172,16 +183,27 @@
             (defn foo "Identity with number checking." [x] {:pre [(number? x)] :post [(number? %)]} x))
           100)
          100)))
-  (it "Should not change anything with WITH-PLUGGABLE and multi arity dispatch."
-    (expect
-     (== ((with-pluggable
-            defn
-            [(argument-type-deducer-plugin :deduce-map {#"x" Long})
-             (argument-type-assertion-plugin)
-             clojure.core/defn]
-            (defn foo 
-              "Identity with number checking."
-              ([x] {:pre [(number? x)] :post [(number? %)]} x)
-              ([x y] {:pre [(number? x)] :post [(number? %)]} x)))
-          100)
-         100))))
+  (testing "Multi Arity"
+   (it "Should not change anything with WITH-PLUGGABLE and multi arity dispatch."
+     (expect
+      (== ((with-pluggable
+             defn
+             [(argument-type-deducer-plugin :deduce-map {#"x" Long})
+              (argument-type-assertion-plugin)
+              clojure.core/defn]
+             (defn foo 
+               "Identity with number checking."
+               ([x] {:pre [(number? x)] :post [(number? %)]} x)
+               ([x y] {:pre [(number? x)] :post [(number? %)]} x)))
+           100)
+          100)))
+   (it "Should add assertions on multi arity fn body."
+     (expect (= ((argument-type-assertion-plugin)
+                 'foo
+                 (list [(with-meta 'x {:type Long})]
+                       'x))
+               (let [x (with-meta 'x {:type Long})]
+                `[~'foo
+                  ([~x] 
+                     (validate-arg-type-from-meta '~x ~x)
+                     ~'x)]))))))
