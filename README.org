@@ -7,10 +7,14 @@
   like in various ways.
   
 * Installation
-  Once you have cloned the library, you may use /leiningen/'s =lein
-  install= command to install the library into your local maven
-  repo. After that you can use it inside your own projects by
-  specifying =[de.karolski.sanity "0.1.0-SNAPSHOT"]= as a dependency.
+  You may simply specify the project as a dependency in your projects
+  /project.clj/ using =[de.karolski/sanity "0.1.0"]=.
+  
+  *Alternatively* if you want the bleeding edge, clone the repository
+  and use /leiningen/'s =lein install= command to install the library
+  into your local maven repo. After that you can use it inside your
+  own local projects by specifying =[de.karolski/sanity
+  "0.1.0-SNAPSHOT"]= as a dependency.
 
 * Usage
   Simple example defining a custom =defn=:
