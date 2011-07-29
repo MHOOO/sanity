@@ -3,7 +3,7 @@
   (use [clojure.pprint :only (cl-format)]
        [clojure.contrib.macro-utils :only (macrolet)]
        (clojure.contrib [logging :only (warn)]
-                        [seq-utils :only (positions)])))
+                        [seq :only (positions)])))
 
 (def fstr (partial cl-format nil))
 
@@ -245,6 +245,13 @@ After: ~S"
      (IllegalArgumentException.
       (fstr "Expected argument `~A` to be of type `~S` but got type `~S` instead." sym (:type (meta sym)) (type arg))))))
 
+(defn- add-metadata-on-fn-arglist
+  [deduce-map & args]
+  (if-let [arglist (first (filter vector? args))]
+    (vec (replace {arglist (add-metadata-on-arglist-using-deduction-map arglist deduce-map)}
+                  args))
+    nil))
+
 (defn argument-type-deducer-plugin
   "Plugin for with-pluggable. Returns a function which transforms the
   argument list by adding :type metadata to symbols which match
@@ -258,12 +265,28 @@ After: ~S"
   type/class for i \\in [0,n]. "
   [& {:keys [deduce-map]}]
   (fn argument-type-deducer-fn
-    [& args]
-    (if-let [arglist (first (filter vector? args))]
-      (vec (replace {arglist (add-metadata-on-arglist-using-deduction-map arglist deduce-map)}
-                    args))
-      ;; TODO: arity dispatch
-      (vec args))))
+    [& args]    
+    (if-let [args (apply add-metadata-on-fn-arglist deduce-map args)]
+      args
+      ;; multi arity
+      (let [[headers forms] (split-with (complement list?) args)]
+        (vec (concat headers
+                     (map (comp (partial apply list) #(or (apply add-metadata-on-fn-arglist deduce-map %) %))
+                          forms)))))))
+
+(defn- add-assertions-on-fn-body
+  [args]
+  (if-let [arglist (first (filter vector? args))]
+    (let [arglist-position (first (positions #{arglist} args))
+          prepost-conditions? (map? (nth args (+ 1 arglist-position)))
+          first-body-position (+ arglist-position (if prepost-conditions? 2 1))
+          assertable-args (filter #(:type (meta %)) arglist)
+          assertion-body
+          (map (fn argument-type-assertion-builder-fn [arg]
+                 `(validate-arg-type-from-meta '~arg ~arg))
+               assertable-args)]
+      (vec (concat (take first-body-position args) (concat assertion-body (drop first-body-position args)))))
+    nil))
 
 (defn argument-type-assertion-plugin
   "Return a function which takes three arguments (NAME, ARGLIST &
@@ -272,15 +295,10 @@ After: ~S"
   []
   (fn argument-type-assertion-fn 
     ([& args]
-       (if-let [arglist (first (filter vector? args))]
-         (let [arglist-position (first (positions #{arglist} args))
-               prepost-conditions? (map? (nth args (+ 1 arglist-position)))
-               first-body-position (+ arglist-position (if prepost-conditions? 2 1))
-               assertable-args (filter #(:type (meta %)) arglist)
-               assertion-body
-               (map (fn argument-type-assertion-builder-fn [arg]
-                      `(validate-arg-type-from-meta '~arg ~arg))
-                    assertable-args)]
-           (vec (concat (take first-body-position args) (concat assertion-body (drop first-body-position args)))))
-         ;; TODO: arity dispatch
-         (vec args)))))
+       (if-let [args (add-assertions-on-fn-body args)]
+         args
+         ;; multi arity
+         (let [[headers forms] (split-with (complement list?) args)]
+           (vec (concat headers
+                        (map (comp (partial apply list) #(or (add-assertions-on-fn-body %) %))
+                             forms))))))))
