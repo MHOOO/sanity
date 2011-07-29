@@ -108,7 +108,7 @@
                 100)))
   (it "Should not do anything on non-matched arguments."
     (expect (== ((with-pluggable fn+
-                   [(argument-type-deducer-plugin :deduce-map {#"i" Integer})
+                   [(argument-type-deducer-plugin :deduce-map {#"i" Long})
                     clojure.core/fn]
                    (fn+ [x] x)) 100)
                 100)))
@@ -116,20 +116,20 @@
   (it "Should deduce deduce type on matched argument."
     (expect (= ((with-pluggable fn+
                   ;;NOTE: If this fails, try with Long instead (clojure 1.3 uses long)
-                  [(argument-type-deducer-plugin :deduce-map {#"x" Integer})
+                  [(argument-type-deducer-plugin :deduce-map {#"x" Long})
                    (fn [arglist body] 
                      [arglist `(list ~@(map meta arglist))])
                    clojure.core/fn]
                   (fn+ [x] nil)) 1)
-                (list {:type java.lang.Integer}))))
+                (list {:type java.lang.Long}))))
   (it "Should deduce deduce type correctly on matched arguments and leave non-matched arguments alone."
     (expect (= ((with-pluggable fn+
-                  [(argument-type-deducer-plugin :deduce-map {#"x" Integer #".*-count" Integer})
+                  [(argument-type-deducer-plugin :deduce-map {#"x" Long #".*-count" Long})
                    (fn [arglist body] 
                      [arglist `(list ~@(map meta arglist))])
                    clojure.core/fn]
                   (fn+ [a x b arg-count] nil)) 1 2 3 4)
-                (list nil {:type java.lang.Integer} nil {:type java.lang.Integer}))))
+                (list nil {:type java.lang.Long} nil {:type java.lang.Long}))))
 
   (it "Should not change anything on multi arity dispatch."
     (expect (= ((with-pluggable fn+
@@ -156,7 +156,7 @@
     (expect
      (== ((with-pluggable
             fn+
-            [(argument-type-deducer-plugin :deduce-map {#"x" Integer})
+            [(argument-type-deducer-plugin :deduce-map {#"x" Long})
              (argument-type-assertion-plugin)
              clojure.core/fn]
             (fn+ foo [x] {:pre [(number? x)] :post [(number? %)]} x))
@@ -166,7 +166,7 @@
     (expect
      (== ((with-pluggable
             defn
-            [(argument-type-deducer-plugin :deduce-map {#"x" Integer})
+            [(argument-type-deducer-plugin :deduce-map {#"x" Long})
              (argument-type-assertion-plugin)
              clojure.core/defn]
             (defn foo "Identity with number checking." [x] {:pre [(number? x)] :post [(number? %)]} x))
@@ -176,7 +176,7 @@
     (expect
      (== ((with-pluggable
             defn
-            [(argument-type-deducer-plugin :deduce-map {#"x" Integer})
+            [(argument-type-deducer-plugin :deduce-map {#"x" Long})
              (argument-type-assertion-plugin)
              clojure.core/defn]
             (defn foo 
