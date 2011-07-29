@@ -1,6 +1,6 @@
 (defproject de.karolski.sanity "0.1.0"
   :description "Transparent addition of types and assertions by
-  deduction on argument names to functions."
+  infering type of arguments from their name."
   :author "Thomas Karolski"
   :dependencies [[org.clojure/clojure "1.3.0-beta1"]
                  [org.clojure.contrib/macro-utils "1.3.0-alpha4"]
