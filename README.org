@@ -34,6 +34,22 @@
   specified inside the =:deduce-map= keyword argument to the
   =argument-type-deducer-plugin= will be type hinted and checked upon
   function entry.
+
+  In case you don't want to completely override =defn=, you may also use =with-pluggable=:
+  #+BEGIN_SRC clojure
+(with-pluggable
+  defn
+  [(argument-type-deducer-plugin :deduce-map {#"i" Long
+                                              #".*-fn" clojure.lang.AFunction
+                                              #".*text" String
+                                              })
+   (argument-type-assertion-plugin)
+   clojure.core/defn]
+
+  ;; YOUR CODE HERE
+  )
+  #+END_SRC
+  This will only bind =defn= within the local scope of =with-pluggable=.
   
 * Future
   see this projects TODO.org
