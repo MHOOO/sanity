@@ -1,4 +1,4 @@
-(defproject de.karolski.sanity "0.1.0"
+(defproject de.karolski/sanity "0.1.0"
   :description "Transparent addition of types and assertions by
   infering type of arguments from their name."
   :author "Thomas Karolski"
